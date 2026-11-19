@@ -30,7 +30,7 @@ details{margin-top:10px;font-size:13px;color:var(--mut)}code{background:#eef0f6;
 @media(max-width:600px){.row,.sp{grid-template-columns:1fr}}
 </style></head><body><div class="wrap">
 <h1>Voice Generator</h1>
-<div class="tabs"><div class="tab on" data-m="single">Standalone</div><div class="tab" data-m="conv">Conversation</div><div class="tab" data-m="tr">Transcribe</div></div>
+<div class="tabs"><div class="tab on" data-m="single">Standalone</div><div class="tab" data-m="conv">Conversation</div></div>
 
 <div id="single" class="card">
   <label>Narrator</label><select id="voice"></select>
@@ -59,29 +59,9 @@ B: I listened to English podcasts every day.</textarea>
   <div class="hint">Each speaker has its own voice, speed and pitch. Use A: B: C: D: at the start of each line.</div>
 </div>
 
-<div id="tr" class="card hide">
-  <label>Audio or video file from your computer</label>
-  <input type="file" id="file" accept="audio/*,video/*,.mp3,.wav,.m4a,.mp4,.ogg,.flac,.webm,.aac,.opus">
-  <div class="row">
-    <div><label>Model</label><select id="model"><option value="base">base (fast, ~140 MB)</option><option value="small" selected>small (recommended, ~460 MB)</option><option value="medium">medium (best, slow, ~1.5 GB)</option></select></div>
-    <div><label>Language</label><select id="lang"><option value="auto">Auto-detect</option><option value="en">English</option><option value="hi">Hindi</option><option value="de">German</option><option value="fr">French</option><option value="es">Spanish</option><option value="ar">Arabic</option><option value="ja">Japanese</option></select></div>
-    <div><label>Timestamps</label><select id="ts"><option value="0">Off</option><option value="1">On</option></select></div>
-  </div>
-  <div style="margin-top:12px"><button id="trgo">Transcribe</button><span id="trst" style="margin-left:12px;color:var(--mut)"></span></div>
-  <div id="inst" class="card hide" style="margin-top:12px;background:#fff8e6">
-    <b>One-time download needed</b>
-    <p style="margin:6px 0">Transcribing needs <code>faster-whisper</code>, about 500 MB. It installs once and then works offline. Do you want to download it now?</p>
-    <button id="instyes">Yes, download</button> <button id="instno" style="background:#8a8fa3">No</button>
-  </div>
-  <label>Transcript</label>
-  <textarea id="out" placeholder="The text will appear here..."></textarea>
-  <div style="margin-top:8px"><button id="cp">Copy text</button> <button id="dltxt">Download .txt</button></div>
-  <p class="hint">The first run with each model also downloads that model once (size shown above). Speed on a normal laptop is roughly real time with "small": a 10-minute file takes about 5-10 minutes. Everything runs on your PC; your audio is not uploaded anywhere.</p>
-</div>
-
-<div id="genbar"><button id="go">Generate voice</button><span id="st"></span>
+<button id="go">Generate voice</button><span id="st"></span>
 <audio id="player" controls class="hide"></audio>
-<p><a id="dl" class="hide" download="voice.mp3">Download mp3</a></p></div>
+<p><a id="dl" class="hide" download="voice.mp3">Download mp3</a></p>
 <details open><summary><b>How to use pauses, speed, pitch and emphasis</b> (select text, then click a button above the text box)</summary>
 <p><code>&lt;break time="500ms"/&gt;</code> or <code>&lt;break time="1.5s"/&gt;</code> = silent pause<br>
 <code>&lt;prosody rate="+20%" pitch="-5Hz" volume="+10%"&gt;text&lt;/prosody&gt;</code> = change a part only. Words also work: rate slow/fast/x-slow/x-fast, pitch low/high, volume soft/loud<br>
@@ -105,37 +85,7 @@ const TOOLS=[['Pause 0.5s','','<break time="500ms"/>'],['Pause 1s','','<break ti
 document.querySelectorAll('.tb').forEach(tb=>{const ta=$(tb.dataset.t);TOOLS.forEach(([n,a,b])=>{const x=document.createElement('button');x.type='button';x.textContent=n;
  x.onclick=()=>{const s=ta.selectionStart,e=ta.selectionEnd,v=ta.value;ta.value=v.slice(0,s)+a+v.slice(s,e)+b+v.slice(e);ta.focus();const c=s+a.length+(e-s)+(e==s&&!a?b.length:0);ta.setSelectionRange(c,c)};tb.appendChild(x)})});
 slider('r1','r1v','%');slider('p1','p1v','Hz');slider('v1','v1v','%');slider('v2','v2v','%');slider('gap','gv','ms');
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{mode=t.dataset.m;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));$('single').classList.toggle('hide',mode!='single');$('conv').classList.toggle('hide',mode!='conv');$('tr').classList.toggle('hide',mode!='tr');$('genbar').classList.toggle('hide',mode=='tr')});
-const wait=ms=>new Promise(r=>setTimeout(r,ms));
-async function ensureInstalled(){
- let s=await (await fetch('/api/transcribe/status')).json();
- if(s.installed)return true;
- $('inst').classList.remove('hide');
- const yes=await new Promise(res=>{$('instyes').onclick=()=>res(true);$('instno').onclick=()=>res(false)});
- $('instyes').disabled=true;
- if(!yes){$('inst').classList.add('hide');$('instyes').disabled=false;return false}
- await fetch('/api/transcribe/install',{method:'POST'});
- let n=0;
- while(true){await wait(2000);s=await (await fetch('/api/transcribe/status')).json();
-  $('trst').textContent='Downloading faster-whisper (about 500 MB)... '+(++n*2)+'s. Keep this window open.';
-  if(s.installed||s.install.state=='done')break;
-  if(s.install.state=='error'){$('inst').classList.add('hide');$('instyes').disabled=false;throw new Error('Install failed: '+s.install.msg)}}
- $('inst').classList.add('hide');$('instyes').disabled=false;return true}
-$('trgo').onclick=async()=>{
- const f=$('file').files[0];if(!f){$('trst').textContent='Choose an audio or video file first.';return}
- $('trgo').disabled=true;$('trst').textContent='Checking...';
- try{
-  if(!await ensureInstalled()){$('trst').textContent='Cancelled. Transcription needs faster-whisper.';$('trgo').disabled=false;return}
-  const t0=Date.now(),tick=setInterval(()=>$('trst').textContent='Transcribing... '+Math.round((Date.now()-t0)/1000)+'s (first run also downloads the model)',1000);
-  try{const q=new URLSearchParams({model:$('model').value,language:$('lang').value,timestamps:$('ts').value,name:f.name});
-   const r=await fetch('/api/transcribe?'+q,{method:'POST',body:f});
-   if(!r.ok)throw new Error(await r.text());
-   const j=await r.json();$('out').value=j.text;$('trst').textContent='Done. Language: '+j.language+', length: '+Math.floor(j.duration/60)+'m '+j.duration%60+'s'}
-  finally{clearInterval(tick)}
- }catch(e){$('trst').textContent='Error: '+e.message}
- $('trgo').disabled=false};
-$('cp').onclick=async()=>{try{await navigator.clipboard.writeText($('out').value);$('trst').textContent='Copied.'}catch(e){$('out').select();document.execCommand('copy')}};
-$('dltxt').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([$('out').value],{type:'text/plain'}));a.download='transcript.txt';a.click()};
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{mode=t.dataset.m;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));$('single').classList.toggle('hide',mode!='single');$('conv').classList.toggle('hide',mode!='conv')});
 $('go').onclick=async()=>{
  let body;
  if(mode=='single'){body={mode,text:$('text1').value,voice:$('voice').value,rate:+$('r1').value,pitch:+$('p1').value,volume:+$('v1').value}}

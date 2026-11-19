@@ -6,8 +6,7 @@ Supports SSML-style markup in the text:
   <emphasis>text</emphasis>                              -> slightly slower + louder
 Tags can be nested; values add up on top of the speaker's own settings.
 """
-import asyncio, importlib, importlib.util, json, os, re, subprocess, sys, tempfile, threading, shutil, webbrowser
-from urllib.parse import urlparse, parse_qs
+import asyncio, json, os, re, subprocess, tempfile, shutil, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import edge_tts
 
@@ -166,69 +165,6 @@ async def generate(d):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-# ---------- Transcriber (faster-whisper, installed on demand) ----------
-INSTALL = {"state": "idle", "msg": ""}  # idle | installing | done | error
-_models = {}
-_model_lock = threading.Lock()
-MODELS = {"base", "small", "medium"}
-
-
-def fw_installed():
-    return importlib.util.find_spec("faster_whisper") is not None
-
-
-def install_fw():
-    INSTALL.update(state="installing", msg="")
-    try:
-        r = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "faster-whisper"],
-                           capture_output=True, text=True)
-        if r.returncode != 0:
-            raise RuntimeError((r.stderr or "pip failed")[-600:])
-        importlib.invalidate_caches()
-        INSTALL.update(state="done")
-    except Exception as e:
-        INSTALL.update(state="error", msg=str(e))
-
-
-def stamp(sec):
-    sec = int(sec)
-    return f"{sec // 60:02d}:{sec % 60:02d}"
-
-
-def decode_audio(path):
-    """Decode any audio/video file to 16 kHz mono float32 (own decoder: newer PyAV versions break faster-whisper's)."""
-    import av
-    import numpy as np
-    chunks = []
-    with av.open(path, mode="r") as container:
-        stream = next(s for s in container.streams if s.type == "audio")
-        resampler = av.AudioResampler(format="s16", layout="mono", rate=16000)
-        for frame in container.decode(stream):
-            for f in resampler.resample(frame):
-                chunks.append(f.to_ndarray().reshape(-1))
-        for f in resampler.resample(None):
-            chunks.append(f.to_ndarray().reshape(-1))
-    if not chunks:
-        raise ValueError("No audio found in this file")
-    return np.concatenate(chunks).astype(np.float32) / 32768.0
-
-
-def transcribe(path, model, language, timestamps):
-    from faster_whisper import WhisperModel
-    audio = decode_audio(path)
-    with _model_lock:
-        if model not in _models:
-            _models[model] = WhisperModel(model, device="cpu", compute_type="int8")
-        m = _models[model]
-    segs, info = m.transcribe(audio, language=None if language == "auto" else language, vad_filter=True)
-    lines = []
-    for s in segs:
-        t = s.text.strip()
-        lines.append(f"[{stamp(s.start)}] {t}" if timestamps else t)
-    return {"text": ("\n" if timestamps else " ").join(lines), "language": info.language,
-            "duration": round(info.duration)}
-
-
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -246,43 +182,11 @@ class H(BaseHTTPRequestHandler):
                 self._send(200, f.read(), "text/html; charset=utf-8")
         elif self.path == "/api/voices":
             self._send(200, json.dumps(asyncio.run(get_voices())).encode(), "application/json")
-        elif self.path == "/api/transcribe/status":
-            self._send(200, json.dumps({"installed": fw_installed(), "install": INSTALL}).encode(), "application/json")
         else:
             self._send(404, b"not found", "text/plain")
 
     def do_POST(self):
-        u = urlparse(self.path)
-        if u.path == "/api/transcribe/install":
-            if INSTALL["state"] != "installing" and not fw_installed():
-                threading.Thread(target=install_fw, daemon=True).start()
-            return self._send(200, b"{}", "application/json")
-        if u.path == "/api/transcribe":
-            tmp = tempfile.mkdtemp()
-            try:
-                q = parse_qs(u.query)
-                model = q.get("model", ["small"])[0]
-                if model not in MODELS:
-                    raise ValueError("Unknown model")
-                if not fw_installed():
-                    raise ValueError("faster-whisper is not installed yet")
-                ext = os.path.splitext(q.get("name", [""])[0])[1][:8] or ".audio"
-                path = os.path.join(tmp, "in" + re.sub(r"[^A-Za-z0-9.]", "", ext))
-                left = int(self.headers["Content-Length"])
-                with open(path, "wb") as f:
-                    while left > 0:
-                        chunk = self.rfile.read(min(1 << 20, left))
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        left -= len(chunk)
-                res = transcribe(path, model, q.get("language", ["auto"])[0], q.get("timestamps", ["0"])[0] == "1")
-                return self._send(200, json.dumps(res).encode(), "application/json")
-            except Exception as e:
-                return self._send(400, str(e).encode(), "text/plain")
-            finally:
-                shutil.rmtree(tmp, ignore_errors=True)
-        if u.path != "/api/generate":
+        if self.path != "/api/generate":
             return self._send(404, b"not found", "text/plain")
         try:
             d = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
