@@ -1,0 +1,102 @@
+﻿<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Voice Generator</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--ink:#1c2030;--mut:#6b7280;--acc:#5b4bdb;--bd:#e3e6ef}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+.wrap{max-width:820px;margin:0 auto;padding:24px 16px}
+h1{margin:0 0 16px;font-size:22px}
+.tabs{display:flex;gap:8px;margin-bottom:16px}
+.tab{padding:8px 16px;border:1px solid var(--bd);border-radius:8px;background:var(--card);cursor:pointer}
+.tab.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:14px}
+label{display:block;font-size:13px;color:var(--mut);margin:8px 0 4px}
+select,textarea{width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;font:inherit;background:#fff;color:var(--ink)}
+textarea{min-height:170px;resize:vertical}
+.row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.sp{display:grid;grid-template-columns:40px 2fr 1fr 1fr;gap:10px;align-items:end;margin-bottom:8px}
+.sp b{font-size:18px;padding-bottom:8px}
+input[type=range]{width:100%}
+.val{font-size:12px;color:var(--acc);font-weight:600}
+button{padding:10px 20px;border:0;border-radius:8px;background:var(--acc);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+button:disabled{opacity:.5}
+#st{margin-left:12px;color:var(--mut)}
+audio{width:100%;margin-top:12px}
+.hint{font-size:12px;color:var(--mut)}
+.hide{display:none}
+.tb{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.tb button{padding:4px 10px;font-size:12px;background:#eceafc;color:var(--acc);font-weight:600}
+details{margin-top:10px;font-size:13px;color:var(--mut)}code{background:#eef0f6;padding:1px 5px;border-radius:4px}
+@media(max-width:600px){.row,.sp{grid-template-columns:1fr}}
+</style></head><body><div class="wrap">
+<h1>Voice Generator</h1>
+<div class="tabs"><div class="tab on" data-m="single">Standalone</div><div class="tab" data-m="conv">Conversation</div></div>
+
+<div id="single" class="card">
+  <label>Narrator</label><select id="voice"></select>
+  <label>Text</label>
+  <div class="tb" data-t="text1"></div>
+  <textarea id="text1" placeholder="Type or paste your text here..."></textarea>
+  <div class="row">
+    <div><label>Speed <span class="val" id="r1v">0%</span></label><input type="range" id="r1" min="-50" max="100" value="0"></div>
+    <div><label>Pitch <span class="val" id="p1v">0Hz</span></label><input type="range" id="p1" min="-50" max="50" value="0"></div>
+    <div><label>Volume <span class="val" id="v1v">0%</span></label><input type="range" id="v1" min="-50" max="50" value="0"></div>
+  </div>
+</div>
+
+<div id="conv" class="card hide">
+  <div id="speakers"></div>
+  <label>Conversation (one line per turn, format  A: text)</label>
+  <div class="tb" data-t="text2"></div>
+  <textarea id="text2">A: Hi! Did you finish the IELTS practice test?
+B: Yes, I scored seven in listening!
+A: That is great. How did you prepare?
+B: I listened to English podcasts every day.</textarea>
+  <div class="row">
+    <div><label>Pause between lines <span class="val" id="gv">400ms</span></label><input type="range" id="gap" min="0" max="2000" step="50" value="400"></div>
+    <div><label>Volume <span class="val" id="v2v">0%</span></label><input type="range" id="v2" min="-50" max="50" value="0"></div>
+  </div>
+  <div class="hint">Each speaker has its own voice, speed and pitch. Use A: B: C: D: at the start of each line.</div>
+</div>
+
+<button id="go">Generate voice</button><span id="st"></span>
+<audio id="player" controls class="hide"></audio>
+<p><a id="dl" class="hide" download="voice.mp3">Download mp3</a></p>
+<details open><summary><b>How to use pauses, speed, pitch and emphasis</b> (select text, then click a button above the text box)</summary>
+<p><code>&lt;break time="500ms"/&gt;</code> or <code>&lt;break time="1.5s"/&gt;</code> = silent pause<br>
+<code>&lt;prosody rate="+20%" pitch="-5Hz" volume="+10%"&gt;text&lt;/prosody&gt;</code> = change a part only. Words also work: rate slow/fast/x-slow/x-fast, pitch low/high, volume soft/loud<br>
+<code>&lt;emphasis&gt;text&lt;/emphasis&gt;</code> = slower and louder<br>
+Numbers: <code>rate="-20%"</code> slower, <code>rate="+20%"</code> faster; <code>pitch="+10Hz"</code> higher; <code>volume="-20%"</code> softer. Words: <code>x-slow slow fast x-fast</code>, <code>low high</code>, <code>soft loud</code>.<br>
+Combine in one tag: <code>&lt;prosody rate="slow" pitch="low" volume="soft"&gt;whisper-like line&lt;/prosody&gt;</code><br>
+Tags add on top of the speaker's own settings. Example: <code>A: This is &lt;emphasis&gt;really&lt;/emphasis&gt; important.&lt;break time="700ms"/&gt; Listen carefully.</code></p></details>
+<p class="hint">Speed: -50% is half speed, +100% is double. Small changes (-10% to +15%) sound most natural.</p>
+</div>
+<script>
+const $=id=>document.getElementById(id);let mode="single",voices=[];
+function opts(sel,def){sel.innerHTML=voices.map(v=>`<option value="${v.name}">${v.locale} Â· ${v.name.split('-').slice(2).join('-').replace('Neural','')} (${v.gender[0]})</option>`).join('');if(def)sel.value=def}
+function slider(id,out,unit){const f=()=>$(out).textContent=(+$(id).value>0?'+':'')+$(id).value+unit;$(id).oninput=f;f()}
+fetch('/api/voices').then(r=>r.json()).then(v=>{voices=v;opts($('voice'),'en-IN-NeerjaNeural');
+ const defs=['en-IN-PrabhatNeural','en-IN-NeerjaNeural','en-US-GuyNeural','en-US-JennyNeural'];
+ $('speakers').innerHTML=['A','B','C','D'].map((s,i)=>`<div class="sp"><b>${s}</b><div><label>Voice</label><select id="sv${s}"></select></div><div><label>Speed <span class="val" id="sr${s}v">0%</span></label><input type="range" id="sr${s}" min="-50" max="100" value="0"></div><div><label>Pitch <span class="val" id="sp${s}v">0Hz</span></label><input type="range" id="sp${s}" min="-50" max="50" value="0"></div></div>`).join('');
+ ['A','B','C','D'].forEach((s,i)=>{opts($('sv'+s),defs[i]);slider('sr'+s,'sr'+s+'v','%');slider('sp'+s,'sp'+s+'v','Hz')})});
+const TOOLS=[['Pause 0.5s','','<break time="500ms"/>'],['Pause 1s','','<break time="1s"/>'],['Pause 2s','','<break time="2s"/>'],
+ ['Slow','<prosody rate="slow">','</prosody>'],['Fast','<prosody rate="fast">','</prosody>'],['Emphasis','<emphasis>','</emphasis>'],
+ ['High pitch','<prosody pitch="high">','</prosody>'],['Low pitch','<prosody pitch="low">','</prosody>'],['Soft','<prosody volume="soft">','</prosody>'],['Loud','<prosody volume="loud">','</prosody>']];
+document.querySelectorAll('.tb').forEach(tb=>{const ta=$(tb.dataset.t);TOOLS.forEach(([n,a,b])=>{const x=document.createElement('button');x.type='button';x.textContent=n;
+ x.onclick=()=>{const s=ta.selectionStart,e=ta.selectionEnd,v=ta.value;ta.value=v.slice(0,s)+a+v.slice(s,e)+b+v.slice(e);ta.focus();const c=s+a.length+(e-s)+(e==s&&!a?b.length:0);ta.setSelectionRange(c,c)};tb.appendChild(x)})});
+slider('r1','r1v','%');slider('p1','p1v','Hz');slider('v1','v1v','%');slider('v2','v2v','%');slider('gap','gv','ms');
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{mode=t.dataset.m;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));$('single').classList.toggle('hide',mode!='single');$('conv').classList.toggle('hide',mode!='conv')});
+$('go').onclick=async()=>{
+ let body;
+ if(mode=='single'){body={mode,text:$('text1').value,voice:$('voice').value,rate:+$('r1').value,pitch:+$('p1').value,volume:+$('v1').value}}
+ else{const sp={};['A','B','C','D'].forEach(s=>sp[s]={voice:$('sv'+s).value,rate:+$('sr'+s).value,pitch:+$('sp'+s).value});
+  body={mode:'conv',text:$('text2').value,speakers:sp,gap:+$('gap').value,volume:+$('v2').value}}
+ if(!body.text.trim()){$('st').textContent='Enter some text first.';return}
+ $('go').disabled=true;$('st').textContent='Generating...';
+ try{const r=await fetch('/api/generate',{method:'POST',body:JSON.stringify(body)});
+  if(!r.ok)throw new Error(await r.text());
+  const url=URL.createObjectURL(await r.blob());$('player').src=url;$('player').classList.remove('hide');$('player').play();
+  $('dl').href=url;$('dl').classList.remove('hide');$('st').textContent='Done.'}
+ catch(e){$('st').textContent='Error: '+e.message}
+ $('go').disabled=false};
+</script></body></html>
