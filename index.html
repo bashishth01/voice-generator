@@ -16,14 +16,16 @@ label{display:block;font-size:13px;color:var(--mut);margin:8px 0 4px}
 @keyframes rot{100%{transform:rotate(360deg)}}
 @keyframes dash{0%{stroke-dasharray:1px,200px;stroke-dashoffset:0}50%{stroke-dasharray:100px,200px;stroke-dashoffset:-15px}100%{stroke-dasharray:100px,200px;stroke-dashoffset:-125px}}
 #go{min-width:170px;height:42px}
-.vplay{margin-top:6px;padding:5px 12px;font-size:12px;background:#eceafc;color:var(--acc);display:inline-flex;align-items:center;gap:6px}
+.vplay{white-space:nowrap;flex-shrink:0;padding:8px 12px;font-size:12px;background:#eceafc;color:var(--acc);display:inline-flex;align-items:center;gap:6px}
 .vplay .spin{width:14px;height:14px}
-.vp{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}.vp .vs{grid-column:1/-1}.vp select,.vp input{padding:6px;font-size:12px}
+.vp{display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px;margin-bottom:6px}.vp select,.vp input{padding:6px;font-size:12px}
+.vrow{display:flex;gap:8px;align-items:center}.vrow select{flex:1;min-width:0}
 select,textarea,input[type=search]{width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;font:inherit;background:#fff;color:var(--ink)}
 textarea{min-height:170px;resize:vertical}
 .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
-.sp{display:grid;grid-template-columns:40px 2fr 1fr 1fr;gap:10px;align-items:end;margin-bottom:8px}
-.sp b{font-size:18px;padding-bottom:8px}
+.sp{display:grid;grid-template-columns:36px 1fr;gap:12px;padding:10px 0 14px;border-top:1px solid var(--bd)}.sp:first-child{border-top:0;padding-top:0}
+.sp>b{font-size:20px;color:var(--acc);padding-top:24px}
+.spr{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px}
 input[type=range]{width:100%}
 .val{font-size:12px;color:var(--acc);font-weight:600}
 button{padding:10px 20px;border:0;border-radius:8px;background:var(--acc);color:#fff;font:inherit;font-weight:600;cursor:pointer}
@@ -35,7 +37,7 @@ audio{width:100%;margin-top:12px}
 .tb{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
 .tb button{padding:4px 10px;font-size:12px;background:#eceafc;color:var(--acc);font-weight:600}
 details{margin-top:10px;font-size:13px;color:var(--mut)}code{background:#eef0f6;padding:1px 5px;border-radius:4px}
-@media(max-width:600px){.row,.sp{grid-template-columns:1fr}}
+@media(max-width:600px){.row,.spr,.vp{grid-template-columns:1fr}}
 </style></head><body><div class="wrap">
 <h1>Voice Generator</h1>
 <div class="tabs"><div class="tab on" data-m="single">Standalone</div><div class="tab" data-m="conv">Conversation</div></div>
@@ -103,7 +105,8 @@ function picker(sel,def,getOpts){
   if(list.some(v=>v.name==cur))sel.value=cur}
  vl.onchange=()=>{regions();fill()};vr.onchange=fill;vs.oninput=fill;
  regions();fill();if(def&&voices.some(v=>v.name==def))sel.value=def;
- const btn=document.createElement('button');btn.type='button';btn.className='vplay';btn.innerHTML=PLAY+' Play sample';sel.after(btn);
+ const btn=document.createElement('button');btn.type='button';btn.className='vplay';btn.innerHTML=PLAY+' Play sample';
+ const row=document.createElement('div');row.className='vrow';sel.before(row);row.append(sel,btn);
  btn.onclick=async()=>{const voice=sel.value;if(!voice)return;const o=getOpts?getOpts():{rate:0,pitch:0},key=voice+'|'+o.rate+'|'+o.pitch;
   if(sampleAudio){sampleAudio.pause();sampleAudio=null}
   btn.disabled=true;
@@ -116,7 +119,7 @@ function picker(sel,def,getOpts){
 function slider(id,out,unit){const f=()=>$(out).textContent=(+$(id).value>0?'+':'')+$(id).value+unit;$(id).oninput=f;f()}
 fetch('/api/voices').then(r=>r.json()).then(v=>{voices=v;picker($('voice'),'en-IN-NeerjaNeural',()=>({rate:+$('r1').value,pitch:+$('p1').value}));
  const defs=['en-IN-PrabhatNeural','en-IN-NeerjaNeural','en-US-GuyNeural','en-US-JennyNeural'];
- $('speakers').innerHTML=['A','B','C','D'].map((s,i)=>`<div class="sp"><b>${s}</b><div><label>Voice</label><select id="sv${s}"></select></div><div><label>Speed <span class="val" id="sr${s}v">0%</span></label><input type="range" id="sr${s}" min="-50" max="100" value="0"></div><div><label>Pitch <span class="val" id="sp${s}v">0Hz</span></label><input type="range" id="sp${s}" min="-50" max="50" value="0"></div></div>`).join('');
+ $('speakers').innerHTML=['A','B','C','D'].map((s,i)=>`<div class="sp"><b>${s}</b><div class="spc"><label>Voice</label><select id="sv${s}"></select><div class="spr"><div><label>Speed <span class="val" id="sr${s}v">0%</span></label><input type="range" id="sr${s}" min="-50" max="100" value="0"></div><div><label>Pitch <span class="val" id="sp${s}v">0Hz</span></label><input type="range" id="sp${s}" min="-50" max="50" value="0"></div></div></div></div>`).join('');
  ['A','B','C','D'].forEach((s,i)=>{picker($('sv'+s),defs[i],()=>({rate:+$('sr'+s).value,pitch:+$('sp'+s).value}));slider('sr'+s,'sr'+s+'v','%');slider('sp'+s,'sp'+s+'v','Hz')})});
 const TOOLS=[['Pause 0.5s','','<break time="500ms"/>'],['Pause 1s','','<break time="1s"/>'],['Pause 2s','','<break time="2s"/>'],
  ['Slow','<prosody rate="slow">','</prosody>'],['Fast','<prosody rate="fast">','</prosody>'],['Emphasis','<emphasis>','</emphasis>'],
