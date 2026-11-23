@@ -11,6 +11,13 @@ h1{margin:0 0 16px;font-size:22px}
 .tab.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:14px}
 label{display:block;font-size:13px;color:var(--mut);margin:8px 0 4px}
+.spin{width:20px;height:20px;display:inline-block;vertical-align:middle;animation:rot 1.4s linear infinite}
+.spin circle{stroke:currentColor;stroke-width:3.6;fill:none;stroke-linecap:round;stroke-dasharray:80px,200px;stroke-dashoffset:0;animation:dash 1.4s ease-in-out infinite}
+@keyframes rot{100%{transform:rotate(360deg)}}
+@keyframes dash{0%{stroke-dasharray:1px,200px;stroke-dashoffset:0}50%{stroke-dasharray:100px,200px;stroke-dashoffset:-15px}100%{stroke-dasharray:100px,200px;stroke-dashoffset:-125px}}
+#go{min-width:170px;height:42px}
+.vplay{margin-top:6px;padding:5px 12px;font-size:12px;background:#eceafc;color:var(--acc);display:inline-flex;align-items:center;gap:6px}
+.vplay .spin{width:14px;height:14px}
 .vp{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}.vp .vs{grid-column:1/-1}.vp select,.vp input{padding:6px;font-size:12px}
 select,textarea,input[type=search]{width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;font:inherit;background:#fff;color:var(--ink)}
 textarea{min-height:170px;resize:vertical}
@@ -78,7 +85,10 @@ const LN=new Intl.DisplayNames(['en'],{type:'language'}),RN=new Intl.DisplayName
 const lname=c=>{try{return LN.of(c)||c}catch(e){return c}},rname=c=>{try{return RN.of(c)||c}catch(e){return c}};
 const vlabel=v=>{const p=v.locale.split('-');return `${lname(p[0])} (${rname(p[p.length-1])}) · ${v.name.split('-').slice(2).join('-').replace('Neural','')} (${v.gender[0]})`};
 /* voice picker: search box + language filter + accent filter in front of a voice <select> */
-function picker(sel,def){
+const SAMPLE='Hey, how are you?',sampleCache={};let sampleAudio=null;
+const SPIN='<svg class="spin" viewBox="22 22 44 44"><circle cx="44" cy="44" r="20.2"/></svg>';
+const PLAY='<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+function picker(sel,def,getOpts){
  const box=document.createElement('div');box.className='vp';
  box.innerHTML='<input type="search" class="vs" placeholder="Search: name, language, country, male/female"><select class="vl"></select><select class="vr"></select>';
  sel.parentNode.insertBefore(box,sel);
@@ -92,12 +102,22 @@ function picker(sel,def){
   sel.innerHTML=list.length?list.map(v=>`<option value="${v.name}">${vlabel(v)}</option>`).join(''):'<option value="">No voice matches</option>';
   if(list.some(v=>v.name==cur))sel.value=cur}
  vl.onchange=()=>{regions();fill()};vr.onchange=fill;vs.oninput=fill;
- regions();fill();if(def&&voices.some(v=>v.name==def))sel.value=def}
+ regions();fill();if(def&&voices.some(v=>v.name==def))sel.value=def;
+ const btn=document.createElement('button');btn.type='button';btn.className='vplay';btn.innerHTML=PLAY+' Play sample';sel.after(btn);
+ btn.onclick=async()=>{const voice=sel.value;if(!voice)return;const o=getOpts?getOpts():{rate:0,pitch:0},key=voice+'|'+o.rate+'|'+o.pitch;
+  if(sampleAudio){sampleAudio.pause();sampleAudio=null}
+  btn.disabled=true;
+  try{if(!sampleCache[key]){btn.innerHTML=SPIN+' Play sample';
+    const r=await fetch('/api/generate',{method:'POST',body:JSON.stringify({mode:'single',text:SAMPLE,voice,rate:o.rate,pitch:o.pitch,volume:0})});
+    if(!r.ok)throw new Error(await r.text());sampleCache[key]=URL.createObjectURL(await r.blob())}
+   sampleAudio=new Audio(sampleCache[key]);sampleAudio.play();btn.innerHTML=PLAY+' Play sample'}
+  catch(e){btn.textContent='Sample failed - try again';setTimeout(()=>btn.innerHTML=PLAY+' Play sample',2500)}
+  btn.disabled=false}}
 function slider(id,out,unit){const f=()=>$(out).textContent=(+$(id).value>0?'+':'')+$(id).value+unit;$(id).oninput=f;f()}
-fetch('/api/voices').then(r=>r.json()).then(v=>{voices=v;picker($('voice'),'en-IN-NeerjaNeural');
+fetch('/api/voices').then(r=>r.json()).then(v=>{voices=v;picker($('voice'),'en-IN-NeerjaNeural',()=>({rate:+$('r1').value,pitch:+$('p1').value}));
  const defs=['en-IN-PrabhatNeural','en-IN-NeerjaNeural','en-US-GuyNeural','en-US-JennyNeural'];
  $('speakers').innerHTML=['A','B','C','D'].map((s,i)=>`<div class="sp"><b>${s}</b><div><label>Voice</label><select id="sv${s}"></select></div><div><label>Speed <span class="val" id="sr${s}v">0%</span></label><input type="range" id="sr${s}" min="-50" max="100" value="0"></div><div><label>Pitch <span class="val" id="sp${s}v">0Hz</span></label><input type="range" id="sp${s}" min="-50" max="50" value="0"></div></div>`).join('');
- ['A','B','C','D'].forEach((s,i)=>{picker($('sv'+s),defs[i]);slider('sr'+s,'sr'+s+'v','%');slider('sp'+s,'sp'+s+'v','Hz')})});
+ ['A','B','C','D'].forEach((s,i)=>{picker($('sv'+s),defs[i],()=>({rate:+$('sr'+s).value,pitch:+$('sp'+s).value}));slider('sr'+s,'sr'+s+'v','%');slider('sp'+s,'sp'+s+'v','Hz')})});
 const TOOLS=[['Pause 0.5s','','<break time="500ms"/>'],['Pause 1s','','<break time="1s"/>'],['Pause 2s','','<break time="2s"/>'],
  ['Slow','<prosody rate="slow">','</prosody>'],['Fast','<prosody rate="fast">','</prosody>'],['Emphasis','<emphasis>','</emphasis>'],
  ['High pitch','<prosody pitch="high">','</prosody>'],['Low pitch','<prosody pitch="low">','</prosody>'],['Soft','<prosody volume="soft">','</prosody>'],['Loud','<prosody volume="loud">','</prosody>']];
@@ -112,11 +132,11 @@ $('go').onclick=async()=>{
   body={mode:'conv',text:$('text2').value,speakers:sp,gap:+$('gap').value,volume:+$('v2').value}}
  if(mode=='single'&&!body.voice){$('st').textContent='Pick a voice first (no voice matches your filter).';return}
  if(!body.text.trim()){$('st').textContent='Enter some text first.';return}
- $('go').disabled=true;$('st').textContent='Generating...';
+ $('go').disabled=true;$('go').innerHTML=SPIN;$('st').textContent='';
  try{const r=await fetch('/api/generate',{method:'POST',body:JSON.stringify(body)});
   if(!r.ok)throw new Error(await r.text());
   const url=URL.createObjectURL(await r.blob());$('player').src=url;$('player').classList.remove('hide');$('player').play();
   $('dl').href=url;$('dl').classList.remove('hide');$('st').textContent='Done.'}
  catch(e){$('st').textContent='Error: '+e.message}
- $('go').disabled=false};
+ $('go').disabled=false;$('go').textContent='Generate voice'};
 </script></body></html>
