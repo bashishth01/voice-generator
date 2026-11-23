@@ -11,7 +11,8 @@ h1{margin:0 0 16px;font-size:22px}
 .tab.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:14px}
 label{display:block;font-size:13px;color:var(--mut);margin:8px 0 4px}
-select,textarea{width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;font:inherit;background:#fff;color:var(--ink)}
+.vp{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}.vp .vs{grid-column:1/-1}.vp select,.vp input{padding:6px;font-size:12px}
+select,textarea,input[type=search]{width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;font:inherit;background:#fff;color:var(--ink)}
 textarea{min-height:170px;resize:vertical}
 .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 .sp{display:grid;grid-template-columns:40px 2fr 1fr 1fr;gap:10px;align-items:end;margin-bottom:8px}
@@ -73,12 +74,30 @@ Tags add on top of the speaker's own settings. Example: <code>A: This is &lt;emp
 </div>
 <script>
 const $=id=>document.getElementById(id);let mode="single",voices=[];
-function opts(sel,def){sel.innerHTML=voices.map(v=>`<option value="${v.name}">${v.locale} · ${v.name.split('-').slice(2).join('-').replace('Neural','')} (${v.gender[0]})</option>`).join('');if(def)sel.value=def}
+const LN=new Intl.DisplayNames(['en'],{type:'language'}),RN=new Intl.DisplayNames(['en'],{type:'region'});
+const lname=c=>{try{return LN.of(c)||c}catch(e){return c}},rname=c=>{try{return RN.of(c)||c}catch(e){return c}};
+const vlabel=v=>{const p=v.locale.split('-');return `${lname(p[0])} (${rname(p[p.length-1])}) · ${v.name.split('-').slice(2).join('-').replace('Neural','')} (${v.gender[0]})`};
+/* voice picker: search box + language filter + accent filter in front of a voice <select> */
+function picker(sel,def){
+ const box=document.createElement('div');box.className='vp';
+ box.innerHTML='<input type="search" class="vs" placeholder="Search: name, language, country, male/female"><select class="vl"></select><select class="vr"></select>';
+ sel.parentNode.insertBefore(box,sel);
+ const vs=box.querySelector('.vs'),vl=box.querySelector('.vl'),vr=box.querySelector('.vr');
+ const langs=[...new Set(voices.map(v=>v.locale.split('-')[0]))].sort((a,b)=>lname(a).localeCompare(lname(b)));
+ vl.innerHTML='<option value="">All languages</option>'+langs.map(l=>`<option value="${l}">${lname(l)}</option>`).join('');
+ function regions(){const l=vl.value,rs=[...new Set(voices.filter(v=>!l||v.locale.startsWith(l+'-')).map(v=>v.locale))].sort(),cur=vr.value;
+  vr.innerHTML='<option value="">All accents</option>'+rs.map(r=>`<option value="${r}">${rname(r.split('-').pop())} (${r})</option>`).join('');vr.value=rs.includes(cur)?cur:''}
+ function fill(){const q=vs.value.trim().toLowerCase(),l=vl.value,r=vr.value,cur=sel.value;
+  const list=voices.filter(v=>(!l||v.locale.startsWith(l+'-'))&&(!r||v.locale===r)&&(!q||q.split(/\s+/).every(w=>(v.name+' '+vlabel(v)+' '+v.gender).toLowerCase().includes(w))));
+  sel.innerHTML=list.length?list.map(v=>`<option value="${v.name}">${vlabel(v)}</option>`).join(''):'<option value="">No voice matches</option>';
+  if(list.some(v=>v.name==cur))sel.value=cur}
+ vl.onchange=()=>{regions();fill()};vr.onchange=fill;vs.oninput=fill;
+ regions();fill();if(def&&voices.some(v=>v.name==def))sel.value=def}
 function slider(id,out,unit){const f=()=>$(out).textContent=(+$(id).value>0?'+':'')+$(id).value+unit;$(id).oninput=f;f()}
-fetch('/api/voices').then(r=>r.json()).then(v=>{voices=v;opts($('voice'),'en-IN-NeerjaNeural');
+fetch('/api/voices').then(r=>r.json()).then(v=>{voices=v;picker($('voice'),'en-IN-NeerjaNeural');
  const defs=['en-IN-PrabhatNeural','en-IN-NeerjaNeural','en-US-GuyNeural','en-US-JennyNeural'];
  $('speakers').innerHTML=['A','B','C','D'].map((s,i)=>`<div class="sp"><b>${s}</b><div><label>Voice</label><select id="sv${s}"></select></div><div><label>Speed <span class="val" id="sr${s}v">0%</span></label><input type="range" id="sr${s}" min="-50" max="100" value="0"></div><div><label>Pitch <span class="val" id="sp${s}v">0Hz</span></label><input type="range" id="sp${s}" min="-50" max="50" value="0"></div></div>`).join('');
- ['A','B','C','D'].forEach((s,i)=>{opts($('sv'+s),defs[i]);slider('sr'+s,'sr'+s+'v','%');slider('sp'+s,'sp'+s+'v','Hz')})});
+ ['A','B','C','D'].forEach((s,i)=>{picker($('sv'+s),defs[i]);slider('sr'+s,'sr'+s+'v','%');slider('sp'+s,'sp'+s+'v','Hz')})});
 const TOOLS=[['Pause 0.5s','','<break time="500ms"/>'],['Pause 1s','','<break time="1s"/>'],['Pause 2s','','<break time="2s"/>'],
  ['Slow','<prosody rate="slow">','</prosody>'],['Fast','<prosody rate="fast">','</prosody>'],['Emphasis','<emphasis>','</emphasis>'],
  ['High pitch','<prosody pitch="high">','</prosody>'],['Low pitch','<prosody pitch="low">','</prosody>'],['Soft','<prosody volume="soft">','</prosody>'],['Loud','<prosody volume="loud">','</prosody>']];
@@ -91,6 +110,7 @@ $('go').onclick=async()=>{
  if(mode=='single'){body={mode,text:$('text1').value,voice:$('voice').value,rate:+$('r1').value,pitch:+$('p1').value,volume:+$('v1').value}}
  else{const sp={};['A','B','C','D'].forEach(s=>sp[s]={voice:$('sv'+s).value,rate:+$('sr'+s).value,pitch:+$('sp'+s).value});
   body={mode:'conv',text:$('text2').value,speakers:sp,gap:+$('gap').value,volume:+$('v2').value}}
+ if(mode=='single'&&!body.voice){$('st').textContent='Pick a voice first (no voice matches your filter).';return}
  if(!body.text.trim()){$('st').textContent='Enter some text first.';return}
  $('go').disabled=true;$('st').textContent='Generating...';
  try{const r=await fetch('/api/generate',{method:'POST',body:JSON.stringify(body)});
